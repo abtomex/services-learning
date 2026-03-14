@@ -21,7 +21,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".MusicService" android:exported="false"/>
+        <service android:name=".MusicService" android:exported="false" android:process=":another_process"/>
+        <service android:name=".ProgressService" android:exported="false" />
     </application>
 
 </manifest>

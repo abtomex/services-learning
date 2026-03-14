@@ -57,6 +57,6 @@ internal class MusicService : Service() {
 
         Log.d(LOG_TAG, "onStartCommand -> before return")
 
-        return START_NOT_STICKY
+        return START_REDELIVER_INTENT
     }
 }
