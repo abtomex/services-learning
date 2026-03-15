@@ -1,18 +1,16 @@
 package com.example.serviceslearning
 
-import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,13 +27,13 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as MusicService.MusicServiceBinder
             musicService = binder.getService()
-            musicService?.setPlayerStateListener(object : MusicService.PlayerStateListener {
 
-                override fun onStateChanged(state: PlayerState) {
-                    playerState = state
+            lifecycleScope.launch {
+                musicService?.playerState?.collect {
+                    playerState = it
                     updateButtonAndProgress()
                 }
-            })
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
