@@ -8,41 +8,83 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.MediaPlayer
+import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
-internal class MusicService : Service() {
+class MusicService : Service() {
 
     private companion object {
         const val LOG_TAG = "MusicService"
-        const val NOTIFICATION_CHANNEL_ID = "music_service_channel"
         const val SERVICE_NOTIFICATION_ID = 100
+        const val NOTIFICATION_CHANNEL_ID = "music_service_channel"
+
     }
 
     // Переменная для хранения MediaPlayer
     private var mediaPlayer: MediaPlayer? = null
 
+    // Глобальная переменная для хранения ссылки на песню
+    private var songUrl = ""
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    private var playerState : PlayerState = PlayerState.Default()
+    private var playerStateListener: PlayerStateListener? = null
 
-    // Инициализация ресурсов
+    fun setPlayerStateListener(listener: PlayerStateListener) {
+        playerStateListener = listener
+    }
+
+    private var timerJob: Job? = null
+
+
+    private fun startTimer() {
+        timerJob = CoroutineScope(Dispatchers.Default).launch {
+            while (mediaPlayer?.isPlaying == true) {
+                delay(300L)
+                playerState = PlayerState.Playing(getCurrentPlayerPosition())
+            }
+        }
+    }
+    private fun getCurrentPlayerPosition(): String {
+        return SimpleDateFormat("mm:ss", Locale.getDefault()).format(mediaPlayer?.currentPosition) ?: "00:00"
+    }
+
+    // Методы класса Service
     override fun onCreate() {
         super.onCreate()
-
-        Log.d(LOG_TAG, "onCreate")
         mediaPlayer = MediaPlayer()
         createNotificationChannel()
+    }
+
+    override fun onDestroy() {
+        releasePlayer()
+    }
+
+    private val binder = MusicServiceBinder()
+
+    override fun onBind(intent: Intent?): IBinder? {
+        songUrl = intent?.getStringExtra("song_url") ?: ""
+
+        initMediaPlayer()
 
         ServiceCompat.startForeground(
-            /* service = */ this,
-            /* id = */ SERVICE_NOTIFICATION_ID,
-            /* notification = */ createNotification(),
-            /* foregroundServiceType = */ getForegroundServiceTypeConstant()
+            this,
+            SERVICE_NOTIFICATION_ID,
+            createNotification(),
+            getForegroundServiceTypeConstant()
         )
 
+        return binder
     }
 
     private fun getForegroundServiceTypeConstant(): Int {
@@ -52,6 +94,17 @@ internal class MusicService : Service() {
             0
         }
     }
+
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Music foreground service")
+            .setContentText("Our service is working right now!")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
 
     private fun createNotificationChannel() {
         // Создание каналов доступно только с Android 8.0
@@ -71,47 +124,61 @@ internal class MusicService : Service() {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun createNotification(): Notification {
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Music foreground service")
-            .setContentText("Our service is working right now!")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
+    override fun onUnbind(intent: Intent?): Boolean {
+        releasePlayer()
+        return super.onUnbind(intent)
     }
 
-    // Освобождение ресурсов
-    override fun onDestroy() {
-        Log.d(LOG_TAG, "onDestroy")
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        songUrl = intent?.getStringExtra("song_url") ?: ""
+        initMediaPlayer()
+        return START_NOT_STICKY
+    }
 
+    // Методы управления Media Player
+
+    // Первичная инициализация плеера
+    private fun initMediaPlayer() {
+        if (songUrl.isEmpty()) return
+
+        mediaPlayer?.setDataSource(songUrl)
+        mediaPlayer?.prepareAsync()
+        mediaPlayer?.setOnPreparedListener {
+            playerState = PlayerState.Prepared()
+        }
+        mediaPlayer?.setOnCompletionListener {
+            playerState = PlayerState.Prepared()
+        }
+    }
+
+    // Запуск воспроизведения
+    fun startPlayer() {
+        mediaPlayer?.start()
+        playerState = PlayerState.Playing(getCurrentPlayerPosition())
+        playerStateListener?.onStateChanged(playerState)
+    }
+
+    fun pausePlayer() {
+        mediaPlayer?.pause()
+        playerState = PlayerState.Paused(getCurrentPlayerPosition())
+        playerStateListener?.onStateChanged(playerState)
+    }
+
+    private fun releasePlayer() {
+        mediaPlayer?.stop()
+        timerJob?.cancel()
+        playerState = PlayerState.Default()
         mediaPlayer?.setOnPreparedListener(null)
         mediaPlayer?.setOnCompletionListener(null)
         mediaPlayer?.release()
         mediaPlayer = null
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(LOG_TAG, "onStartCommand | flags: $flags, startId: $startId")
+    inner class MusicServiceBinder : Binder() {
+        fun getService(): MusicService = this@MusicService
+    }
 
-        val songUrl = intent?.getStringExtra("song_url")
-        if (songUrl != null) {
-            Log.d(LOG_TAG, "onStartCommand -> song url exists")
-
-            mediaPlayer?.setDataSource(songUrl)
-            mediaPlayer?.prepareAsync()
-
-            mediaPlayer?.setOnPreparedListener {
-                it?.start()
-            }
-
-            mediaPlayer?.setOnCompletionListener {
-                stopSelf()
-            }
-        }
-
-        Log.d(LOG_TAG, "onStartCommand -> before return")
-
-        return START_REDELIVER_INTENT
+    interface PlayerStateListener {
+        fun onStateChanged(state: PlayerState)
     }
 }
