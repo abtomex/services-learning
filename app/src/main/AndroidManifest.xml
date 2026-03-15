@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -21,8 +25,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".MusicService" android:exported="false" android:process=":another_process"/>
-        <service android:name=".ProgressService" android:exported="false" />
+        <service android:name=".MusicService" android:exported="false" android:process=":another_process" android:foregroundServiceType="mediaPlayback"/>
+        <service android:name=".ProgressService" android:exported="false"/>
     </application>
 
 </manifest>
